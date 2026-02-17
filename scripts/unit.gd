@@ -40,6 +40,6 @@ func _draw() -> void:
 	var color := Color(0.2, 0.8, 0.3) if owner_side == "player" else Color(0.9, 0.25, 0.25)
 	draw_circle(Vector2.ZERO, 12.0 if not is_expensive else 16.0, color)
 	draw_string(ThemeDB.fallback_font, Vector2(-22, -16), unit_name.substr(0, 3), HORIZONTAL_ALIGNMENT_LEFT, 60, 12, Color.WHITE)
-	var hp_ratio := clamp(hp / 120.0, 0.0, 1.0)
+	var hp_ratio: float = clampf(hp / 120.0, 0.0, 1.0)
 	draw_rect(Rect2(-16, 16, 32, 4), Color(0.2, 0.2, 0.2))
 	draw_rect(Rect2(-16, 16, 32 * hp_ratio, 4), Color(0.1, 1.0, 0.2))
