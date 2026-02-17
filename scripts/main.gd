@@ -4,12 +4,11 @@ const UnitScene := preload("res://scenes/Unit.tscn")
 const BaseScene := preload("res://scenes/Base.tscn")
 
 const LANE_Y: Array[float] = [220.0, 360.0, 500.0]
-const LANE_START_X: float = 170.0
-const LANE_END_X: float = 1110.0
 const PLAYER_SPAWN_X: float = 190.0
 const ENEMY_SPAWN_X: float = 1090.0
 const MATCH_TIME: float = 300.0
 const UNIT_CAP: int = 10
+const BASE_HALF_WIDTH: float = 56.0
 
 var player_civ: String = "Egyptians"
 var player_resource: float = 80.0
@@ -92,14 +91,26 @@ func _ready() -> void:
 	resource_timer.start(1.0)
 	queue_redraw()
 
+func _lane_start_x() -> float:
+	if player_base == null:
+		return 150.0
+	return player_base.position.x + BASE_HALF_WIDTH
+
+func _lane_end_x() -> float:
+	if enemy_base == null:
+		return 1130.0
+	return enemy_base.position.x - BASE_HALF_WIDTH
+
 func _draw() -> void:
+	var start_x: float = _lane_start_x()
+	var end_x: float = _lane_end_x()
 	for i: int in range(LANE_Y.size()):
 		var y: float = LANE_Y[i]
 		var lane_color: Color = Color(0.26, 0.26, 0.31, 0.7)
 		if i == selected_lane:
 			lane_color = Color(0.9, 0.82, 0.25, 0.95)
-		draw_line(Vector2(LANE_START_X, y), Vector2(LANE_END_X, y), lane_color, 14.0)
-		draw_string(ThemeDB.fallback_font, Vector2(LANE_START_X - 60.0, y + 4.0), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, 30.0, 16, Color.WHITE)
+		draw_line(Vector2(start_x, y), Vector2(end_x, y), lane_color, 14.0)
+		draw_string(ThemeDB.fallback_font, Vector2(start_x - 48.0, y + 4.0), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, 30.0, 16, Color.WHITE)
 
 func _setup_bases() -> void:
 	if player_base:
@@ -114,10 +125,7 @@ func _setup_bases() -> void:
 	enemy_base.side = "enemy"
 	player_base.set_civ_data(player_civ, float(civ_data[player_civ]["start_hp"]))
 	enemy_base.set_civ_data("Norse", float(civ_data["Norse"]["start_hp"]))
-	if player_civ == "Egyptians":
-		player_base.set_visual(_resolve_egyptian_base_texture())
-	else:
-		player_base.set_visual(null)
+	_update_player_base_visual()
 	add_child(player_base)
 	add_child(enemy_base)
 	player_generation = float(civ_data[player_civ]["generation"][0])
@@ -132,12 +140,20 @@ func _setup_bases() -> void:
 	elapsed = 0.0
 	game_over = false
 
-func _resolve_egyptian_base_texture() -> Texture2D:
+func _update_player_base_visual() -> void:
+	if player_civ == "Egyptians":
+		player_base.set_visual(_resolve_egyptian_base_texture(player_upgrade_level))
+	else:
+		player_base.set_visual(null)
+
+func _resolve_egyptian_base_texture(level: int) -> Texture2D:
+	var level_index: int = clampi(level, 1, 3)
 	var candidates: Array[String] = [
-		"res://assets/egyptian_base.png",
-		"res://assets/EgyptianBase.png",
-		"res://assets/egypt/base.png",
-		"res://egyptian_base.png"
+		"res://sprites/Egypt/Egypt_Base_%d.png" % level_index,
+		"res://sprites/Egypt/EgyptBase_%d.png" % level_index,
+		"res://sprites/Egypt_Base_%d.png" % level_index,
+		"res://assets/egyptian_base_%d.png" % level_index,
+		"res://assets/egyptian_base.png"
 	]
 	for path: String in candidates:
 		if ResourceLoader.exists(path):
@@ -168,8 +184,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		_select_lane_from_position(event.position)
 
 func _select_lane_from_position(pos: Vector2) -> void:
+	var start_x: float = _lane_start_x()
+	var end_x: float = _lane_end_x()
 	for i: int in range(LANE_Y.size()):
-		if absf(pos.y - LANE_Y[i]) <= 45.0 and pos.x >= LANE_START_X and pos.x <= LANE_END_X:
+		if absf(pos.y - LANE_Y[i]) <= 45.0 and pos.x >= start_x and pos.x <= end_x:
 			selected_lane = i
 			queue_redraw()
 			return
@@ -226,14 +244,22 @@ func _spawn_unit(side: String, expensive: bool, lane: int) -> void:
 	u.position = Vector2(PLAYER_SPAWN_X if side == "player" else ENEMY_SPAWN_X, LANE_Y[lane])
 	add_child(u)
 
+func _distance_to_target(u: Unit, target: Node2D) -> float:
+	if target is BaseBuilding:
+		var base_edge_x: float = target.position.x - BASE_HALF_WIDTH if u.owner_side == "player" else target.position.x + BASE_HALF_WIDTH
+		return absf(base_edge_x - u.position.x)
+	return u.position.distance_to(target.position)
+
 func _update_units(delta: float) -> void:
+	var start_x: float = _lane_start_x()
+	var end_x: float = _lane_end_x()
 	for c: Node in get_children():
 		if c is not Unit:
 			continue
 		var u: Unit = c
 		var target: Node2D = _find_target_for(u)
 		if target != null:
-			if u.position.distance_to(target.position) <= u.attack_range + 8.0 and u.can_attack():
+			if _distance_to_target(u, target) <= u.attack_range + 8.0 and u.can_attack():
 				var dealt: float = u.damage + _ally_damage_bonus(u)
 				if target is Unit:
 					target.take_damage(dealt)
@@ -250,7 +276,7 @@ func _update_units(delta: float) -> void:
 			if u.class_id == "Romans":
 				speed_bonus = player_road_speed_bonus if u.owner_side == "player" else enemy_road_speed_bonus
 			u.position.x += dir * (u.move_speed + speed_bonus) * delta
-			u.position.x = clampf(u.position.x, LANE_START_X, LANE_END_X)
+			u.position.x = clampf(u.position.x, start_x, end_x)
 		if player_base.hp <= 0.0:
 			_end_game("Defeat")
 		if enemy_base.hp <= 0.0:
@@ -271,8 +297,8 @@ func _find_target_for(u: Unit) -> Node2D:
 	if best != null and best_dist <= u.attack_range + 8.0:
 		return best
 	var base_target: BaseBuilding = enemy_base if u.owner_side == "player" else player_base
-	var base_edge_x: float = base_target.position.x - 50.0 if u.owner_side == "player" else base_target.position.x + 50.0
-	if absf(base_edge_x - u.position.x) <= u.attack_range + 8.0:
+	var base_dist: float = _distance_to_target(u, base_target)
+	if base_dist <= u.attack_range + 8.0:
 		return base_target
 	return null
 
@@ -307,6 +333,7 @@ func _upgrade_player() -> void:
 		return
 	player_upgrade_level += 1
 	player_base.level = player_upgrade_level
+	_update_player_base_visual()
 	_apply_upgrade_effect("player", player_civ)
 	player_upgrade_in_progress = false
 
