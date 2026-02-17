@@ -328,7 +328,7 @@ func _on_class_selected(idx: int) -> void:
 	enemy_resource = 80
 
 func _update_hud() -> void:
-	var resource_name := civ_data[player_civ]["resource"]
+	var resource_name: String = str(civ_data[player_civ]["resource"])
 	hud.text = "%s: %d | Base HP: %d/%d | Level: %d | Time: %ds" % [
 		resource_name,
 		int(player_resource),
